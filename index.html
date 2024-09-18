@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spellodious with Fixed Combo Mechanic</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    /* [Existing CSS styles remain unchanged, with added styles for combo display] */
+    body {
+        background-color: #222;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 0;
+        overflow-x: hidden;
+    }
+    #game {
+        position: relative;
+        width: 100%;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+    }
+    #comboDisplay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        font-size: 24px;
+        font-weight: bold;
+        color: #0f0;
+        text-shadow: 1px 1px 2px #000;
+        z-index: 1000;
+    }
+    #mysteryMelody {
+        margin-top: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .mini-melody-group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 5px;
+    }
+    .note-circle-container {
+        display: flex;
+    }
+    .note-circle {
+        width: 30px;
+        height: 30px;
+        margin: 2px;
+        border-radius: 50%;
+        background-color: gray;
+    }
+    .cooldown-bar-container {
+        width: 100%;
+        height: 5px;
+        background-color: #555;
+        margin-top: 5px;
+        position: relative;
+    }
+    .cooldown-bar {
+        width: 100%;
+        height: 100%;
+        background-color: #00f;
+        position: absolute;
+        left: 0;
+        top: 0;
+    }
+    #battleArea {
+        flex: 1;
+        position: relative;
+        margin-top: 20px;
+        overflow: hidden;
+    }
+    #wizard, #enemy {
+        width: 80px;
+        height: 100px;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+    #wizard {
+        background-color: purple;
+        left: 10%;
+    }
+    #enemy {
+        background-color: darkred;
+    }
+    #spellButtons {
+        position: relative;
+        margin: 20px auto;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 600px;
+    }
+    .spell-button {
+        width: 80px;
+        height: 80px;
+        margin: 10px;
+        border: none;
+        border-radius: 50%;
+        color: #fff;
+        font-size: 14px;
+    }
+    #message {
+        margin-top: 10px;
+        height: 20px;
+    }
+    .health-bar-container {
+        position: absolute;
+        width: 80px;
+        height: 10px;
+        background-color: #555;
+        border: 1px solid #fff;
+        top: -15px;
+        left: 0;
+        right: 0;
+        margin: 0 auto;
+    }
+    .health-bar {
+        width: 100%;
+        height: 100%;
+    }
+    #wizardHealthBar {
+        background-color: #0f0;
+    }
+    #enemyHealthBar {
+        background-color: #f00;
+    }
+    .spell, .attack {
+        position: absolute;
+        border-radius: 50%;
+    }
+</style>
+</head>
+<body>
+<div id="game">
+    <!-- Combo Display -->
+    <div id="comboDisplay">Combo: 0</div>
+    <div id="mysteryMelody"></div>
+    <div id="battleArea">
+        <div id="wizard">
+            <div class="health-bar-container">
+                <div id="wizardHealthBar" class="health-bar"></div>
+            </div>
+        </div>
+        <div id="enemy">
+            <div class="health-bar-container">
+                <div id="enemyHealthBar" class="health-bar"></div>
+            </div>
+        </div>
+        <div id="message"></div>
+    </div>
+    <div id="spellButtons"></div>
+</div>
+<script>
+    // Notes and Colors
+    const notes = [
+        {name: 'Low C', color: 'red', frequency: 261.63},
+        {name: 'D', color: 'orange', frequency: 293.66},
+        {name: 'E', color: 'yellow', frequency: 329.63},
+        {name: 'F', color: 'green', frequency: 349.23},
+        {name: 'G', color: 'cyan', frequency: 392.00},
+        {name: 'A', color: 'blue', frequency: 440.00},
+        {name: 'B', color: 'indigo', frequency: 493.88},
+        {name: 'High C', color: 'violet', frequency: 523.25}
+    ];
+
+    // Generate Mystery Melody and Mini-Melodies
+    const minTotalNotes = 15;
+    const maxTotalNotes = 20;
+    let totalNotes = Math.floor(Math.random() * (maxTotalNotes - minTotalNotes + 1)) + minTotalNotes;
+    let mysteryMelody = [];
+    let miniMelodies = [];
+
+    while (totalNotes > 0) {
+        let miniMelodyLength;
+        if (totalNotes >= 4) {
+            // When enough notes remain, choose 2 or 3 notes
+            miniMelodyLength = Math.floor(Math.random() * 2) + 2; // 2-3 notes
+        } else if (totalNotes === 3) {
+            miniMelodyLength = 3;
+        } else if (totalNotes === 2) {
+            miniMelodyLength = 2;
+        } else {
+            // Adjust totalNotes to avoid mini-melody of length 1
+            totalNotes += 1; // Increase totalNotes to make the last mini-melody at least length 2
+            miniMelodyLength = 2;
+        }
+
+        let miniMelody = [];
+        for (let i = 0; i < miniMelodyLength; i++) {
+            const randomNote = notes[Math.floor(Math.random() * notes.length)];
+            miniMelody.push(randomNote);
+        }
+        miniMelodies.push({notes: miniMelody, discovered: false, cooldown: false, cooldownStart: null, cooldownBar: null});
+        totalNotes -= miniMelodyLength;
+    }
+
+    // Flatten miniMelodies to create mysteryMelody
+    miniMelodies.forEach(mm => {
+        mysteryMelody = mysteryMelody.concat(mm.notes);
+    });
+
+    // Display Mystery Melody Circles with Mini-Melody Grouping
+    const mysteryMelodyDiv = document.getElementById('mysteryMelody');
+    miniMelodies.forEach((miniMelodyObj, groupIndex) => {
+        const groupDiv = document.createElement('div');
+        groupDiv.classList.add('mini-melody-group');
+        mysteryMelodyDiv.appendChild(groupDiv);
+
+        const noteCircleContainer = document.createElement('div');
+        noteCircleContainer.classList.add('note-circle-container');
+        groupDiv.appendChild(noteCircleContainer);
+
+        miniMelodyObj.notes.forEach((_, noteIndex) => {
+            const circle = document.createElement('div');
+            circle.classList.add('note-circle');
+            circle.dataset.index = noteIndex;
+            noteCircleContainer.appendChild(circle);
+        });
+    });
+
+    // Spell Buttons
+    const spellButtonsDiv = document.getElementById('spellButtons');
+    notes.forEach((note, index) => {
+        const button = document.createElement('button');
+        button.classList.add('spell-button');
+        button.style.backgroundColor = note.color;
+        button.textContent = note.name;
+        button.onclick = () => {
+            playNote(note.frequency);
+            handleNoteInput(index, note.color);
+        };
+        spellButtonsDiv.appendChild(button);
+    });
+
+    // Audio Context for Playing Notes
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function playNote(frequency) {
+        if (!audioCtx) {
+            audioCtx = new AudioContext();
+        }
+        const oscillator = audioCtx.createOscillator();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        oscillator.connect(gainNode).connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.2);
+    }
+
+    // Game Logic
+    let playerMelody = [];
+    const messageDiv = document.getElementById('message');
+    let wizardHealth = 100;
+    const wizard = document.getElementById('wizard');
+    const enemy = document.getElementById('enemy');
+    const battleArea = document.getElementById('battleArea');
+
+    // Combo Display Element
+    const comboDisplay = document.getElementById('comboDisplay');
+
+    // Enemy Variables
+    let enemyLevel = 1;
+    let enemyMaxHealth = 100;
+    let enemyHealth = enemyMaxHealth;
+    let enemySpeed = 20; // Pixels per second
+    let enemyPosition = battleArea.offsetWidth - enemy.offsetWidth - (battleArea.offsetWidth * 0.1); // Start at right: 10%
+    const wizardPositionX = battleArea.offsetWidth * 0.1; // Wizard is at left: 10%
+
+    // Combo Variables
+    let comboCount = 0;
+    let lastMatchedMiniMelodyIndex = -1;
+    let wrongNotePlayed = false;
+
+    function handleNoteInput(noteIndex, noteColor) {
+        playerMelody.push(noteIndex);
+        wrongNotePlayed = false;
+        checkForMiniMelodyMatch(noteColor);
+        checkForWrongNote();
+        if (wrongNotePlayed) {
+            // Reset combo
+            comboCount = 0;
+            lastMatchedMiniMelodyIndex = -1;
+            updateComboDisplay();
+        }
+        castCantrip(noteColor);
+    }
+
+    function checkForMiniMelodyMatch(noteColor) {
+        for (let i = 0; i < miniMelodies.length; i++) {
+            const miniMelodyObj = miniMelodies[i];
+            const miniMelody = miniMelodyObj.notes;
+            if (playerMelody.length >= miniMelody.length) {
+                const recentNotes = playerMelody.slice(-miniMelody.length);
+                const miniMelodyIndices = miniMelody.map(note => notes.indexOf(note));
+                if (arraysEqual(recentNotes, miniMelodyIndices)) {
+                    revealMiniMelody(i);
+                    if (!miniMelodyObj.cooldown) {
+                        // Combo logic
+                        if (i === lastMatchedMiniMelodyIndex + 1) {
+                            comboCount += 1;
+                        } else {
+                            comboCount = 1;
+                        }
+                        lastMatchedMiniMelodyIndex = i;
+                        updateComboDisplay();
+
+                        castMiniMelodySpell(noteColor);
+                        messageDiv.textContent = 'You discovered a mini-melody!';
+                        startMiniMelodyCooldown(i);
+                    } else {
+                        messageDiv.textContent = 'Mini-melody spell is on cooldown!';
+                    }
+                    // Correct mini-melody matched
+                    return;
+                }
+            }
+        }
+    }
+
+    function checkForWrongNote() {
+        // Get the max length of mini-melodies
+        const maxMiniMelodyLength = Math.max(...miniMelodies.map(mm => mm.notes.length));
+        // Only consider the last 'maxMiniMelodyLength' notes
+        const recentNotes = playerMelody.slice(-maxMiniMelodyLength);
+        // Now, check if recentNotes is a prefix of any mini-melody
+        let isValidSequence = false;
+        for (let mm of miniMelodies) {
+            const miniMelodyIndices = mm.notes.map(note => notes.indexOf(note));
+            const prefixLength = recentNotes.length;
+            if (prefixLength <= miniMelodyIndices.length) {
+                const miniMelodyPrefix = miniMelodyIndices.slice(0, prefixLength);
+                if (arraysEqual(recentNotes, miniMelodyPrefix)) {
+                    isValidSequence = true;
+                    break;
+                }
+            }
+        }
+        if (!isValidSequence) {
+            wrongNotePlayed = true;
+        }
+    }
+
+    function updateComboDisplay() {
+        comboDisplay.textContent = `Combo: ${comboCount}`;
+    }
+
+    function revealMiniMelody(index) {
+        const miniMelodyObj = miniMelodies[index];
+        miniMelodyObj.discovered = true;
+        const groupDiv = mysteryMelodyDiv.children[index];
+        const noteCircles = groupDiv.querySelectorAll('.note-circle');
+        miniMelodyObj.notes.forEach((note, idx) => {
+            const circle = noteCircles[idx];
+            circle.style.backgroundColor = note.color;
+        });
+    }
+
+    function startMiniMelodyCooldown(index) {
+        const miniMelodyObj = miniMelodies[index];
+        miniMelodyObj.cooldown = true;
+        miniMelodyObj.cooldownStart = Date.now();
+
+        // Create cooldown bar if it doesn't exist
+        if (!miniMelodyObj.cooldownBar) {
+            const groupDiv = mysteryMelodyDiv.children[index];
+            const cooldownContainer = document.createElement('div');
+            cooldownContainer.classList.add('cooldown-bar-container');
+            const cooldownBar = document.createElement('div');
+            cooldownBar.classList.add('cooldown-bar');
+            cooldownContainer.appendChild(cooldownBar);
+            groupDiv.appendChild(cooldownContainer);
+            miniMelodyObj.cooldownBar = cooldownBar;
+        }
+
+        // Start updating the cooldown bar
+        const cooldownDuration = 5000; // 5 seconds
+        function updateCooldown() {
+            const elapsed = Date.now() - miniMelodyObj.cooldownStart;
+            const remaining = cooldownDuration - elapsed;
+            if (remaining > 0) {
+                const percent = (remaining / cooldownDuration) * 100;
+                miniMelodyObj.cooldownBar.style.width = percent + '%';
+                requestAnimationFrame(updateCooldown);
+            } else {
+                miniMelodyObj.cooldown = false;
+                miniMelodyObj.cooldownBar.style.width = '0%';
+                messageDiv.textContent = '';
+            }
+        }
+        updateCooldown();
+    }
+
+    function castCantrip(noteColor) {
+        // Basic Damage to Enemy
+        applyDamage(1);
+        showCantripSpell(noteColor);
+    }
+
+    function castMiniMelodySpell(noteColor) {
+        // Bonus Damage for Mini-Melody with Combo
+        const totalDamage = 10 * comboCount;
+        applyDamage(totalDamage);
+        for (let i = 0; i < comboCount; i++) {
+            setTimeout(() => {
+                showMiniMelodySpell(noteColor);
+            }, i * 200); // Delay each spell slightly for visual effect
+        }
+    }
+
+    function applyDamage(amount) {
+        enemyHealth -= amount;
+        if (enemyHealth < 0) enemyHealth = 0;
+        updateEnemyHealthBar();
+        if (enemyHealth <= 0) {
+            messageDiv.textContent = 'Enemy defeated!';
+            // Increase enemy level
+            enemyLevel += 1;
+
+            // Reveal a random undiscovered mini-melody
+            revealRandomUndiscoveredMiniMelody();
+
+            // Generate a new enemy
+            generateNewEnemy();
+        }
+    }
+
+    function revealRandomUndiscoveredMiniMelody() {
+        const undiscoveredIndices = [];
+        for (let i = 0; i < miniMelodies.length; i++) {
+            if (!miniMelodies[i].discovered) {
+                undiscoveredIndices.push(i);
+            }
+        }
+
+        if (undiscoveredIndices.length > 0) {
+            const randomIndex = undiscoveredIndices[Math.floor(Math.random() * undiscoveredIndices.length)];
+            revealMiniMelody(randomIndex);
+        }
+    }
+
+    function generateNewEnemy() {
+        // Increase enemy health and speed based on enemyLevel
+        enemyMaxHealth = 100 + (enemyLevel - 1) * 20; // Increase health by 20 per level
+        enemyHealth = enemyMaxHealth;
+        enemySpeed = 20 + (enemyLevel - 1) * 5; // Increase speed by 5 pixels per level
+
+        // Reset enemy position
+        enemyPosition = battleArea.offsetWidth - enemy.offsetWidth - (battleArea.offsetWidth * 0.1); // Start at right: 10%
+        enemy.style.left = enemyPosition + 'px';
+
+        // Update enemy health bar
+        updateEnemyHealthBar();
+
+        // Reset enemy animation variables
+        enemy.previousTimestamp = null;
+
+        // Start enemy movement
+        enemyMovementFrame = requestAnimationFrame(moveEnemy);
+    }
+
+    function arraysEqual(a1, a2) {
+        return JSON.stringify(a1) === JSON.stringify(a2);
+    }
+
+    function updateEnemyHealthBar() {
+        const enemyHealthBar = document.getElementById('enemyHealthBar');
+        const healthPercent = (enemyHealth / enemyMaxHealth) * 100;
+        enemyHealthBar.style.width = healthPercent + '%';
+    }
+
+    function updateWizardHealthBar() {
+        const wizardHealthBar = document.getElementById('wizardHealthBar');
+        wizardHealthBar.style.width = wizardHealth + '%';
+    }
+
+    // Enemy Movement Function
+    function moveEnemy(timestamp) {
+        if (!enemy.previousTimestamp) enemy.previousTimestamp = timestamp;
+        const delta = (timestamp - enemy.previousTimestamp) / 1000; // Convert to seconds
+        enemy.previousTimestamp = timestamp;
+
+        // Move enemy towards the wizard
+        enemyPosition -= enemySpeed * delta;
+        if (enemyPosition < wizardPositionX + wizard.offsetWidth) {
+            enemyPosition = wizardPositionX + wizard.offsetWidth;
+        }
+        enemy.style.left = enemyPosition + 'px';
+
+        // Check for collision
+        if (enemyPosition <= wizardPositionX + wizard.offsetWidth) {
+            // Collision detected
+            wizardHealth = 0;
+            updateWizardHealthBar();
+            messageDiv.textContent = 'You have been defeated!';
+            return;
+        }
+
+        enemyMovementFrame = requestAnimationFrame(moveEnemy);
+    }
+
+    // Restore showCantripSpell function with animations
+    function showCantripSpell(noteColor) {
+        const spell = document.createElement('div');
+        spell.classList.add('spell');
+        spell.style.backgroundColor = noteColor;
+        spell.style.width = '10px';
+        spell.style.height = '10px';
+        spell.style.left = wizard.offsetLeft + wizard.offsetWidth + 'px';
+        spell.style.top = wizard.offsetTop + wizard.offsetHeight / 2 + 'px';
+        battleArea.appendChild(spell);
+
+        const enemyRect = enemy.getBoundingClientRect();
+        const spellRect = spell.getBoundingClientRect();
+        const deltaX = enemyRect.left + enemyRect.width / 2 - (spellRect.left + spellRect.width / 2);
+        const deltaY = enemyRect.top + enemyRect.height / 2 - (spellRect.top + spellRect.height / 2);
+
+        spell.animate([
+            { transform: 'translate(0, 0)' },
+            { transform: `translate(${deltaX}px, ${deltaY}px)` }
+        ], {
+            duration: 500,
+            easing: 'linear',
+            fill: 'forwards'
+        });
+
+        setTimeout(() => {
+            spell.remove();
+        }, 500);
+    }
+
+    // Restore showMiniMelodySpell function with animations
+    function showMiniMelodySpell(noteColor) {
+        const spell = document.createElement('div');
+        spell.classList.add('spell');
+        spell.style.backgroundColor = noteColor;
+        spell.style.width = '20px';
+        spell.style.height = '20px';
+        spell.style.left = wizard.offsetLeft + wizard.offsetWidth + 'px';
+        spell.style.top = wizard.offsetTop + wizard.offsetHeight / 2 + 'px';
+        battleArea.appendChild(spell);
+
+        const enemyRect = enemy.getBoundingClientRect();
+        const spellRect = spell.getBoundingClientRect();
+        const deltaX = enemyRect.left + enemyRect.width / 2 - (spellRect.left + spellRect.width / 2);
+        const deltaY = enemyRect.top + enemyRect.height / 2 - (spellRect.top + spellRect.height / 2);
+
+        spell.animate([
+            { transform: 'translate(0, 0)' },
+            { transform: `translate(${deltaX}px, ${deltaY}px)` }
+        ], {
+            duration: 500,
+            easing: 'linear',
+            fill: 'forwards'
+        });
+
+        setTimeout(() => {
+            spell.remove();
+        }, 500);
+    }
+
+    // Start the Game
+    updateWizardHealthBar();
+    updateComboDisplay(); // Initialize combo display
+
+    // Generate the first enemy
+    generateNewEnemy();
+
+    // Handle Audio Context Resumption for Mobile Browsers
+    document.body.addEventListener('touchend', () => {
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    });
+</script>
+</body>
+</html>
